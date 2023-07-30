@@ -7,12 +7,13 @@ from flask_jwt_extended import JWTManager, jwt_required, create_access_token
 from flask_restx import Api, Resource, fields
 from flask_cors import CORS
 from datetime import datetime, timedelta
+import models as model
 
 app = Flask(__name__)
 CORS(app)
 
-app.secret_key = '123123123asdasdasd!!!!'
-app.config['JWT_SECRET_KEY'] = '123123123asdasdasd!!!!'
+app.secret_key = '8a9c8d9c-2eae-11ee-be56-0242ac120002'
+app.config['JWT_SECRET_KEY'] = '772f614a-980c-4de7-80e7-fec271bd295a'
 jwt = JWTManager(app)
 
 registered_users = {}
@@ -20,32 +21,11 @@ employees_data = utility.load_employees()
 
 api = Api(app, version='1.0', title='3cloud Mock API', description='3Cloud QEs Mock API Service by Ansel Fernandez')
 
-user_model = api.model('User', {
-    'username': fields.String(required=True, description='Username'),
-    'password': fields.String(required=True, description='Password')
-})
-
-employee_model = api.model('Employee', {
-    'name': fields.String(required=True, description='Employee Name'),
-    'designation': fields.String(required=True, description='Employee Designation')
-})
-
-response_model = api.model('Response', {
-    'message': fields.String(description='Response message'),
-    'author': fields.String(description='Author of the message'),
-    'status': fields.String(description='Status of the request')
-})
-
 public_space = api.namespace('public', description='Exposed API Endpoints', path='/public')
-
-private_space = api.namespace('private', description='Private API Endpoints', path='/private')
-
-employee_space = api.namespace('employees', description='Employees API Endpoints', path='/employees')
-
 @public_space.route('/login')
 class UserLogin(Resource):
-    @public_space.expect(user_model, validate=True)
-    @public_space.response(200, 'Success', response_model)
+    @public_space.expect(model.user_model, validate=True)
+    @public_space.response(200, 'Success', model.response_model)
     @public_space.response(401, 'Unauthorized - Invalid credentials')
     def post(self):
         """User login"""
@@ -68,8 +48,8 @@ class UserLogin(Resource):
 
 @public_space.route('/register')
 class UserRegistration(Resource):
-    @public_space.expect(user_model, validate=True)
-    @public_space.response(200, 'Success', response_model)
+    @public_space.expect(model.user_model, validate=True)
+    @public_space.response(200, 'Success', model.response_model)
     @public_space.response(409, 'Conflict - Invalid username')
     def post(self):
         """Register a new user"""
@@ -87,6 +67,7 @@ class UserRegistration(Resource):
         registered_users[username] = password
         return {'message': 'Registration successful'}, 200
 
+private_space = api.namespace('private', description='Private API Endpoints', path='/private')
 @private_space.route('/profile')
 class UserProfile(Resource):
     @private_space.response(200, 'Success - User authenticated')
@@ -111,7 +92,7 @@ class UserProfile(Resource):
         
         return {'access_token': access_token}, 200
 
-# Add the "Employees" endpoints to the "Employees" namespace
+employee_space = api.namespace('employees', description='Employees API Endpoints', path='/employees')
 @employee_space.route('/')
 class Employees(Resource):
     @jwt_required()
@@ -120,8 +101,8 @@ class Employees(Resource):
         return employees_data
 
     @jwt_required()
-    @employee_space.expect(employee_model, validate=True)
-    @employee_space.response(201, 'Created', response_model)
+    @employee_space.expect(model.employee_model, validate=True)
+    @employee_space.response(201, 'Created', model.response_model)
     def post(self):
         """Add a new employee"""
         try:
@@ -141,38 +122,41 @@ class Employees(Resource):
         return {'message': 'Employee added successfully.'}, 201
 
 @employee_space.route('/<employee_name>')
-class Employee(Resource):
-    @jwt_required()
-    @employee_space.marshal_with(employee_model)
-    @employee_space.response(404, 'Employee not found')
+class EmployeeByName(Resource):
+    @employee_space.response(200, 'Success', model.response_model)
     def get(self, employee_name):
-        """Get an employee by name"""
+        """Get an employee's information by name"""
         for employee in employees_data:
             if employee['name'] == employee_name:
                 return employee, 200
         employee_space.abort(404, 'Employee not found.')
 
     @jwt_required()
-    @employee_space.expect(employee_model, validate=True)
-    @employee_space.response(200, 'Updated', response_model)
+    @employee_space.expect(model.employee_model, validate=True)
+    @employee_space.response(200, 'Updated', model.response_model)
     def put(self, employee_name):
         """Update an employee by name"""
         for employee in employees_data:
             if employee['name'] == employee_name:
                 employee['name'] = request.json['name']
-                employee['designation'] = request.json['designation']
+                employee['position'] = request.json['position']
+                employee['achievements'] = request.json['achievements']
                 return {'message': 'Employee updated successfully.'}, 200
         employee_space.abort(404, 'Employee not found.')
 
-    @jwt_required()
-    @employee_space.expect(employee_model, validate=True)
-    @employee_space.response(200, 'Updated', response_model)
+    @employee_space.expect(model.employee_model, validate=True)
+    @employee_space.response(200, 'Updated', model.response_model)
     def patch(self, employee_name):
         """Update an employee's information by name"""
         for employee in employees_data:
             if employee['name'] == employee_name:
-                employee['designation'] = request.json['designation']
-                return {'message': 'Employee designation updated successfully.'}, 200
+                if 'name' in request.json:
+                    employee['name'] = request.json['name']
+                if 'position' in request.json:
+                    employee['position'] = request.json['position']
+                if 'achievements' in request.json:
+                    employee['achievements'] = request.json['achievements']
+                return {'message': 'Employee information updated successfully.'}, 200
         employee_space.abort(404, 'Employee not found.')
 
 if __name__ == '__main__':
