@@ -6,6 +6,7 @@ from validation import validation
 from flask_jwt_extended import JWTManager, jwt_required, create_access_token
 from flask_restx import Api, Resource, fields
 from flask_cors import CORS
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 CORS(app)
@@ -59,7 +60,9 @@ class UserLogin(Resource):
         if username not in registered_users or registered_users[username] != password:
             return {'error': 'Invalid credentials. Please check your username and password.'}, 401
 
-        access_token = create_access_token(identity=username)
+        # Token expiration to 30 minutes
+        expires = timedelta(minutes=30)
+        access_token = create_access_token(identity=username, expires_delta=expires)
         session['access_token'] = access_token
         return {'message': 'Login successful'}, 200
 
@@ -86,7 +89,7 @@ class UserRegistration(Resource):
 
 @private_space.route('/profile')
 class UserProfile(Resource):
-    @private_space.response(200, 'Success', response_model)
+    @private_space.response(200, 'Success - User authenticated')
     @private_space.response(401, 'Unauthorized - Authentication token not found')
     def get(self):
         """Get user profile"""
@@ -95,13 +98,23 @@ class UserProfile(Resource):
         if not access_token:
             return {'error': 'Authentication token not found. Please log in.'}, 401
 
+        token_exp = session.get('access_token_expiration')
+
+        if not token_exp or datetime.utcnow().timestamp() > token_exp:
+            return {'error': 'Authentication token expired. Please log in again.'}, 401
+
+        current_time = datetime.utcnow()
+        token_exp_datetime = datetime.fromtimestamp(token_exp)
+
+        if current_time > token_exp_datetime:
+            return {'error': 'Authentication token expired. Please log in again.'}, 401
+        
         return {'access_token': access_token}, 200
 
 # Add the "Employees" endpoints to the "Employees" namespace
 @employee_space.route('/')
 class Employees(Resource):
     @jwt_required()
-    @employee_space.marshal_list_with(employee_model)
     def get(self):
         """Get all employees"""
         return employees_data
@@ -155,7 +168,7 @@ class Employee(Resource):
     @employee_space.expect(employee_model, validate=True)
     @employee_space.response(200, 'Updated', response_model)
     def patch(self, employee_name):
-        """Update an employee's designation by name"""
+        """Update an employee's information by name"""
         for employee in employees_data:
             if employee['name'] == employee_name:
                 employee['designation'] = request.json['designation']
