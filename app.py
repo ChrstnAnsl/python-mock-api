@@ -1,4 +1,4 @@
-from flask import Flask, request, session
+from flask import Flask, request, session, render_template
 from marshmallow import ValidationError
 from schema import schema
 import utils.utils as utility
@@ -8,7 +8,8 @@ from flask_restx import Api, Resource, fields
 from flask_cors import CORS
 from datetime import datetime, timedelta
 
-app = Flask(__name__)
+
+app = Flask(__name__, template_folder='templates', static_url_path='/static', static_folder='static')
 app.secret_key = '123123123asdasdasd!!!!'
 app.config['JWT_SECRET_KEY'] = '123123123asdasdasd!!!!'
 
@@ -16,11 +17,16 @@ CORS(app)
 
 jwt = JWTManager(app)
 
-registered_users = {}
 
-employees_data = utility.load_employees()
+api = Api(
+    app,
+    version='1.0',
+    title='3Cloud Mock API',
+    description='3Cloud QEs Mock API Service by Ansel Fernandez',
+    docs='/',
+    swagger_ui_bundle='swagger/favicon.ico'
+)
 
-api = Api(app, version='1.0', title='3cloud Mock API', description='3Cloud QEs Mock API Service by Ansel Fernandez')
 
 user_model = api.model('User', {
     'username': fields.String(required=True, description='Username'),
@@ -44,6 +50,8 @@ public_space = api.namespace('public', description='Exposed API Endpoints', path
 private_space = api.namespace('private', description='Private API Endpoints', path='/private')
 
 employee_space = api.namespace('employees', description='Employees API Endpoints', path='/employees')
+employees_data = utility.load_employees()
+registered_users = {}
 
 @public_space.route('/login')
 class UserLogin(Resource):
@@ -67,6 +75,7 @@ class UserLogin(Resource):
         expires = timedelta(minutes=30)
         access_token = create_access_token(identity=username, expires_delta=expires)
         session['access_token'] = access_token
+        session['access_token_expiration'] = (datetime.utcnow() + expires).timestamp()
         return {'message': 'Login successful'}, 200
 
 @public_space.route('/register')
@@ -94,25 +103,24 @@ class UserRegistration(Resource):
 class UserProfile(Resource):
     @private_space.response(200, 'Success - User authenticated')
     @private_space.response(401, 'Unauthorized - Authentication token not found')
+    @private_space.response(403, 'Forbidden - Authentication token expired or invalid')
     def get(self):
         """Get user profile"""
         access_token = session.get('access_token')
+        token_exp = session.get('access_token_expiration')
 
         if not access_token:
             return {'error': 'Authentication token not found. Please log in.'}, 401
 
-        token_exp = session.get('access_token_expiration')
+        if not token_exp:
+            return {'error': 'Authentication token expired. Please log in again.'}, 403
 
-        if not token_exp or datetime.utcnow().timestamp() > token_exp:
-            return {'error': 'Authentication token expired. Please log in again.'}, 401
+        current_time = datetime.utcnow().timestamp()
 
-        current_time = datetime.utcnow()
-        token_exp_datetime = datetime.fromtimestamp(token_exp)
+        if current_time > token_exp:
+            return {'error': 'Authentication token expired. Please log in again.'}, 403
 
-        if current_time > token_exp_datetime:
-            return {'error': 'Authentication token expired. Please log in again.'}, 401
-        
-        return {'access_token': access_token}, 200
+        return {'message': 'User profile data goes here', 'access_token': access_token}, 200
 
 # Add the "Employees" endpoints to the "Employees" namespace
 @employee_space.route('/')
